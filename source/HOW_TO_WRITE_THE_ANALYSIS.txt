@@ -1,0 +1,463 @@
+# ============================================================================
+# ANALYSE LISBON FLIGHTS - PSEUDO-CODE
+# ============================================================================
+#
+# This file describes analyse_lisbon_flights.py in pseudo-code, in the same
+# order as the real script. Each line translates into one or a few lines of
+# Python.
+#
+# The script reads the CSV produced by process_lisbon_flights.py and
+# calculates descriptive statistics on departure and arrival deviations:
+# overall, by month, day of the week, hour, market segment, airline and
+# destination. Each result is saved as a CSV table, and the main results are
+# also saved as PNG charts.
+#
+# It needs two libraries: pandas (tables) and matplotlib (charts).
+#
+# Run it from the source folder with this command, typed on one line:
+#
+# python3 analyse_lisbon_flights.py --input lisbon_flights_202410_202510.csv --output-dir analysis
+#
+# Methodological notes, to repeat in the report:
+# - "Deviation" is the actual time minus the FILED flight-plan time, not the
+#   timetable shown to passengers. Positive = later than filed.
+# - Only scheduled flights (ICAO flight type "S") are analysed.
+# - All times are UTC. Lisbon is UTC+0 in winter and UTC+1 in summer, so in
+#   summer a 09:00 local departure appears as 08:00.
+# - Airlines and destinations are ICAO codes (TAP, LEMD...). The code ZZZ
+#   means the operator was not disclosed; it is left out of the airline
+#   ranking.
+# - Extreme values are kept. The median is reported next to the mean because
+#   a few very large values do not move it.
+#
+# ----------------------------------------------------------------------------
+# KEYWORDS
+# ----------------------------------------------------------------------------
+#
+# IMPORT x              load a module          Python: import x
+# CONSTANT X = value    a value that never changes, written in capitals
+# VARIABLE x = value    create a variable      Python: x = value
+# x = value             change a variable that already exists
+# FUNCTION f(a, b):     define a function      Python: def f(a, b):
+# RETURN x              leave the function and give back x
+# IF / ELSE             Python: if / else
+# FOR EACH x IN y:      repeat for every item  Python: for x in y:
+# ADD x TO y            Python: y.append(x)
+# PRINT                 Python: print(...)
+#
+# Indentation marks the lines that belong to a block, exactly as in Python.
+#
+# Two words used throughout:
+# - DataFrame: a pandas table, with named columns and one row per flight.
+# - Series: one column of a DataFrame.
+
+
+# ----------------------------------------------------------------------------
+# IMPORTS
+# ----------------------------------------------------------------------------
+
+IMPORT argparse
+IMPORT Path FROM pathlib
+
+IMPORT matplotlib
+# "Agg" draws charts straight into files, without opening a window. This
+# must be set before importing pyplot.
+matplotlib.use("Agg")
+IMPORT matplotlib.pyplot AS plt
+IMPORT pandas AS pd
+
+
+# ----------------------------------------------------------------------------
+# SETTINGS
+# ----------------------------------------------------------------------------
+
+CONSTANT DEFAULT_INPUT_NAME = "lisbon_flights_202410_202510.csv"
+CONSTANT DEFAULT_OUTPUT_DIR_NAME = "analysis"
+
+# Up to 15 minutes late counts as on time (industry standard).
+CONSTANT ON_TIME_LIMIT = 15
+CONSTANT LONG_DELAY_LIMIT = 60
+
+# Groups with fewer flights give unreliable percentages (1 late flight out
+# of 2 is "50%"). They are left out of the segment, airline and destination
+# tables and out of the hour chart.
+CONSTANT MIN_FLIGHTS = 100
+
+# Number of airlines and destinations shown in the charts.
+CONSTANT TOP_N = 15
+
+CONSTANT UNDISCLOSED_OPERATOR = "ZZZ"
+
+CONSTANT DEPARTURE = "departure_deviation_min"
+CONSTANT ARRIVAL = "arrival_deviation_min"
+
+CONSTANT TIME_COLUMNS = ["filed_departure", "actual_departure",
+                         "filed_arrival", "actual_arrival"]
+
+CONSTANT DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday",
+                      "Friday", "Saturday", "Sunday"]
+
+# Printed at the bottom of every chart.
+CONSTANT CHART_NOTE = "Scheduled flights departing Lisbon (LPPT), Nov 2024 -
+                       Oct 2025. Deviation = actual minus filed flight-plan
+                       time. Times in UTC. Source: EUROCONTROL."
+
+
+# ----------------------------------------------------------------------------
+# LOADING THE DATA
+# ----------------------------------------------------------------------------
+
+# Reads the CSV, keeps only scheduled flights and adds helper columns.
+FUNCTION load_flights(input_path):
+    # pd.read_csv reads the whole file into a DataFrame. parse_dates turns
+    # the timestamp text in those columns into real dates and times.
+    VARIABLE flights = pd.read_csv(input_path, parse_dates=TIME_COLUMNS)
+    VARIABLE total = len(flights)
+
+    # flights["icao_flight_type"] == "S" gives True or False for every row.
+    # Putting that inside flights[...] keeps only the rows that are True.
+    # .copy() makes a separate table, so adding columns below does not
+    # produce a pandas warning.
+    flights = flights[flights["icao_flight_type"] == "S"].copy()
+
+    PRINT "Flights in file:", total
+    PRINT "Scheduled flights kept:", len(flights)
+    PRINT "Non-scheduled left out:", total - len(flights)
+
+    # Helper columns, all from the filed departure time. .dt gives access to
+    # the parts of a date column.
+    # strftime("%Y-%m") writes the month as text, e.g. "2024-11".
+    flights["month"] = flights["filed_departure"].dt.strftime("%Y-%m")
+    # day_of_week: 0 = Monday ... 6 = Sunday.
+    flights["weekday"] = flights["filed_departure"].dt.day_of_week
+    # hour: 0 to 23, in UTC.
+    flights["hour"] = flights["filed_departure"].dt.hour
+
+    RETURN flights
+
+
+# ----------------------------------------------------------------------------
+# STATISTICS
+# ----------------------------------------------------------------------------
+
+# Percentage of values above `limit`, ignoring missing values.
+FUNCTION percent_above(values, limit):
+    # dropna() removes missing values (empty cells).
+    values = values.dropna()
+    IF len(values) == 0:
+        RETURN float("nan")      # "not a number": no result possible
+    # values > limit gives True/False for each value. The mean of True/False
+    # is the share of True (True counts as 1, False as 0). Times 100 = %.
+    RETURN (values > limit).mean() * 100
+
+
+# All the statistics for one deviation column, as a Series with one value
+# per statistic.
+FUNCTION describe_deviation(values):
+    values = values.dropna()
+    RETURN pd.Series({
+        "flights":             len(values),
+        "mean_min":            values.mean(),
+        "median_min":          values.median(),
+        "std_dev_min":         values.std(),
+        "min_min":             values.min(),
+        # quantile(0.25): 25% of flights are below this value (Q1).
+        "q1_min":              values.quantile(0.25),
+        # quantile(0.75): 75% of flights are below this value (Q3).
+        "q3_min":              values.quantile(0.75),
+        # quantile(0.90): 90% of flights are below this value.
+        "p90_min":             values.quantile(0.90),
+        "max_min":             values.max(),
+        "early_pct":           (values < 0).mean() * 100,
+        # On time = at most 15 minutes late; this includes early flights.
+        "on_time_pct":         (values <= ON_TIME_LIMIT).mean() * 100,
+        "delayed_over_15_pct": (values > ON_TIME_LIMIT).mean() * 100,
+        "delayed_over_60_pct": (values > LONG_DELAY_LIMIT).mean() * 100,
+    })
+
+
+# Overall statistics: one row per statistic, one column for departures and
+# one for arrivals.
+FUNCTION overall_statistics(flights):
+    VARIABLE table = pd.DataFrame()           # an empty table
+    table["departure"] = describe_deviation(flights[DEPARTURE])
+    table["arrival"] = describe_deviation(flights[ARRIVAL])
+    RETURN table.round(2)                     # 2 decimals
+
+
+# Groups the flights by one column and calculates, for each group: number of
+# flights, mean and median deviation, and % delayed over 15 minutes.
+FUNCTION summarise_by(flights, column):
+    # groupby splits the table into one group per value of `column`, e.g.
+    # one group per month. Every calculation below is then done separately
+    # in each group, and the result has one row per group.
+    VARIABLE groups = flights.groupby(column)
+
+    VARIABLE table = pd.DataFrame()
+    # size() counts the rows in each group.
+    table["flights"] = groups.size()
+    table["dep_mean_min"] = groups[DEPARTURE].mean()
+    table["dep_median_min"] = groups[DEPARTURE].median()
+    # apply runs our own function on each group; ON_TIME_LIMIT is passed to
+    # it as the `limit` argument.
+    table["dep_delayed_over_15_pct"] = groups[DEPARTURE].apply(
+        percent_above, ON_TIME_LIMIT)
+    table["arr_mean_min"] = groups[ARRIVAL].mean()
+    table["arr_median_min"] = groups[ARRIVAL].median()
+    table["arr_delayed_over_15_pct"] = groups[ARRIVAL].apply(
+        percent_above, ON_TIME_LIMIT)
+
+    RETURN table.round(1)                     # 1 decimal
+
+
+# Keeps groups with at least MIN_FLIGHTS flights, largest first.
+FUNCTION keep_large_groups(table):
+    table = table[table["flights"] >= MIN_FLIGHTS]
+    RETURN table.sort_values("flights", ascending=False)
+
+
+# ----------------------------------------------------------------------------
+# OUTPUT HELPERS
+# ----------------------------------------------------------------------------
+
+# Prints a table on screen and saves it as CSV.
+FUNCTION show_and_save(table, title, file_path):
+    PRINT "=== " + title + " ==="
+    # to_string() prints every row, without "..." in the middle.
+    PRINT table.to_string()
+    table.to_csv(file_path)
+
+
+# Adds title, labels and the source note, then saves the chart as PNG.
+# A matplotlib chart has two parts: the figure (the whole image) and one or
+# more axes (each drawing area inside it, with its own title and labels).
+FUNCTION finish_chart(figure, axes, title, x_label, y_label, file_path):
+    axes.set_title(title)
+    axes.set_xlabel(x_label)
+    axes.set_ylabel(y_label)
+    # Light horizontal grid lines; alpha is transparency (0 to 1).
+    axes.grid(axis="y", alpha=0.3)
+    # Small grey note in the bottom-left corner. The positions (0.01, 0.01)
+    # are fractions of the image width and height.
+    figure.text(0.01, 0.01, CHART_NOTE, fontsize=7, color="grey")
+    # tight_layout stops labels from being cut off; rect leaves the bottom 3%
+    # free for the note.
+    figure.tight_layout(rect=(0, 0.03, 1, 1))
+    # dpi = dots per inch; 150 gives a sharp image for web pages.
+    figure.savefig(file_path, dpi=150)
+    # Close the chart to free memory before drawing the next one.
+    plt.close(figure)
+    PRINT "Chart saved:", file_path
+
+
+# ----------------------------------------------------------------------------
+# CHARTS
+# ----------------------------------------------------------------------------
+
+# Histogram: how many flights fall in each 5-minute band of deviation.
+FUNCTION chart_distribution(flights, file_path):
+    # Bands from -30 to +120 minutes. Flights outside this range (very few)
+    # are not drawn, so the main shape is visible.
+    VARIABLE bins = range(-30, 121, 5)
+
+    # plt.subplots creates a figure with one drawing area (axes).
+    # figsize is the size in inches (width, height).
+    VARIABLE figure, axes = plt.subplots(figsize=(10, 5))
+    # alpha=0.6 makes the bars partly transparent, so both are visible
+    # where they overlap.
+    axes.hist(flights[DEPARTURE].dropna(), bins=bins, alpha=0.6,
+              label="Departure")
+    axes.hist(flights[ARRIVAL].dropna(), bins=bins, alpha=0.6,
+              label="Arrival")
+    # A dashed vertical line at the 15-minute limit.
+    axes.axvline(ON_TIME_LIMIT, color="black", linestyle="--", linewidth=1,
+                 label="15-minute limit")
+    # legend() shows the box that explains the colours, using each label.
+    axes.legend()
+    finish_chart(figure, axes,
+                 "Distribution of deviations (-30 to +120 min shown)",
+                 "Deviation (minutes)", "Number of flights", file_path)
+
+
+# Two line charts, one above the other: % delayed by month, and median
+# deviation by month.
+FUNCTION chart_by_month(table, file_path):
+    # plt.subplots(2, 1) creates 2 rows and 1 column of drawing areas.
+    # sharex=True makes both use the same horizontal axis (the months).
+    VARIABLE figure, (top, bottom) = plt.subplots(2, 1, figsize=(10, 7),
+                                                  sharex=True)
+
+    # table.index holds the months; marker="o" draws a dot at each point.
+    top.plot(table.index, table["dep_delayed_over_15_pct"], marker="o",
+             label="Departure")
+    top.plot(table.index, table["arr_delayed_over_15_pct"], marker="o",
+             label="Arrival")
+    top.set_title("Flights delayed more than 15 minutes, by month")
+    top.set_ylabel("% of flights")
+    top.grid(axis="y", alpha=0.3)
+    top.legend()
+
+    bottom.plot(table.index, table["dep_median_min"], marker="o",
+                label="Departure")
+    bottom.plot(table.index, table["arr_median_min"], marker="o",
+                label="Arrival")
+    bottom.legend()
+    # Turn the month labels 45 degrees so they do not overlap.
+    bottom.tick_params(axis="x", rotation=45)
+    finish_chart(figure, bottom, "Median deviation, by month",
+                 "Month", "Minutes", file_path)
+
+
+# Bar chart: % delayed over 15 minutes, with a departure bar and an arrival
+# bar side by side for each group.
+FUNCTION chart_delayed_bars(table, title, x_label, file_path):
+    VARIABLE figure, axes = plt.subplots(figsize=(10, 5))
+    # Take only the two columns to draw, and rename them for the legend.
+    VARIABLE columns = table[["dep_delayed_over_15_pct",
+                              "arr_delayed_over_15_pct"]]
+    columns.columns = ["Departure", "Arrival"]
+    # pandas draws one bar per column for each row, using matplotlib.
+    # ax=axes tells it which drawing area to use.
+    columns.plot.bar(ax=axes)
+    # Keep the labels under the bars horizontal.
+    axes.tick_params(axis="x", rotation=0)
+    finish_chart(figure, axes, title, x_label,
+                 "% delayed more than 15 minutes", file_path)
+
+
+# Horizontal bar chart for the TOP_N largest airlines or destinations.
+FUNCTION chart_top(table, title, file_path):
+    # The table is already sorted largest first; head takes the first rows.
+    VARIABLE top = table.head(TOP_N)
+    VARIABLE columns = top[["dep_delayed_over_15_pct",
+                            "arr_delayed_over_15_pct"]].copy()
+    columns.columns = ["Departure", "Arrival"]
+
+    # Label each bar with its code and number of flights, e.g.
+    # "TAP (54,598)". {count:,} writes the number with thousands commas.
+    # zip goes through the two lists side by side.
+    VARIABLE labels = empty list
+    FOR EACH code, count IN zip(top.index, top["flights"]):
+        ADD f"{code} ({count:,})" TO labels
+    columns.index = labels
+
+    # Horizontal bars are drawn from the bottom up. iloc[::-1] reverses the
+    # row order, so the largest ends up at the top.
+    columns = columns.iloc[::-1]
+
+    VARIABLE figure, axes = plt.subplots(figsize=(10, 7))
+    columns.plot.barh(ax=axes)
+    # Vertical grid lines suit horizontal bars.
+    axes.grid(axis="x", alpha=0.3)
+    finish_chart(figure, axes, title, "% delayed more than 15 minutes", "",
+                 file_path)
+
+
+# ----------------------------------------------------------------------------
+# MAIN
+# ----------------------------------------------------------------------------
+
+FUNCTION main():
+    # Command-line options. Path(__file__).resolve().parent is the folder
+    # that contains this script; both defaults point there.
+    VARIABLE script_dir = Path(__file__).resolve().parent
+    VARIABLE parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=Path,
+                        default=script_dir / DEFAULT_INPUT_NAME)
+    parser.add_argument("--output-dir", type=Path,
+                        default=script_dir / DEFAULT_OUTPUT_DIR_NAME)
+    # After parsing, "--output-dir" is read as args.output_dir.
+    VARIABLE args = parser.parse_args()
+
+    IF NOT args.input.is_file():
+        PRINT "ERROR: input file not found"
+        RETURN
+
+    # Create the output folder. parents=True also creates missing parent
+    # folders; exist_ok=True means no error if it already exists.
+    VARIABLE output_dir = args.output_dir
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    VARIABLE flights = load_flights(args.input)
+
+    # 1. Overall statistics.
+    VARIABLE overall = overall_statistics(flights)
+    show_and_save(overall, "Overall statistics", output_dir / "overall.csv")
+
+    # 2. By month.
+    VARIABLE by_month = summarise_by(flights, "month")
+    show_and_save(by_month, "By month", output_dir / "by_month.csv")
+
+    # 3. By day of the week. Grouping by the number (0-6) keeps the
+    #    Monday-to-Sunday order; then the numbers are replaced by names.
+    VARIABLE by_weekday = summarise_by(flights, "weekday")
+    by_weekday.index = DAY_NAMES
+    by_weekday.index.name = "weekday"
+    show_and_save(by_weekday, "By day of the week",
+                  output_dir / "by_weekday.csv")
+
+    # 4. By hour of filed departure (UTC).
+    VARIABLE by_hour = summarise_by(flights, "hour")
+    show_and_save(by_hour, "By hour of filed departure (UTC)",
+                  output_dir / "by_hour.csv")
+
+    # 5. By market segment, large groups only, largest first.
+    VARIABLE by_segment = keep_large_groups(
+        summarise_by(flights, "statfor_market_segment"))
+    show_and_save(by_segment, "By market segment (at least 100 flights)",
+                  output_dir / "by_segment.csv")
+
+    # 6. By airline, without the undisclosed operator ZZZ.
+    VARIABLE undisclosed = flights[flights["airline"] == UNDISCLOSED_OPERATOR]
+    PRINT "Flights with undisclosed operator (ZZZ), left out of the airline
+           ranking:", len(undisclosed)
+    VARIABLE known_airlines = flights[flights["airline"]
+                                      != UNDISCLOSED_OPERATOR]
+    VARIABLE by_airline = keep_large_groups(
+        summarise_by(known_airlines, "airline"))
+    show_and_save(by_airline, "By airline (at least 100 flights)",
+                  output_dir / "by_airline.csv")
+
+    # 7. By destination.
+    VARIABLE by_destination = keep_large_groups(
+        summarise_by(flights, "destination"))
+    show_and_save(by_destination, "By destination (at least 100 flights)",
+                  output_dir / "by_destination.csv")
+
+    # Charts.
+    chart_distribution(flights, output_dir / "chart_distribution.png")
+    chart_by_month(by_month, output_dir / "chart_by_month.png")
+    chart_delayed_bars(by_weekday,
+        "Flights delayed more than 15 minutes, by day of the week",
+        "Day of the week", output_dir / "chart_by_weekday.png")
+
+    # The night hours have very few flights, so only hours with at least
+    # MIN_FLIGHTS are drawn. The table above still lists every hour.
+    VARIABLE busy_hours = by_hour[by_hour["flights"] >= MIN_FLIGHTS]
+    chart_delayed_bars(busy_hours,
+        "Flights delayed more than 15 minutes, by hour of filed departure",
+        "Hour (UTC)", output_dir / "chart_by_hour.png")
+
+    chart_delayed_bars(by_segment,
+        "Flights delayed more than 15 minutes, by market segment",
+        "Market segment", output_dir / "chart_by_segment.png")
+    chart_top(by_airline,
+        "Top 15 airlines by number of flights: % delayed more than 15
+         minutes",
+        output_dir / "chart_top_airlines.png")
+    chart_top(by_destination,
+        "Top 15 destinations by number of flights: % delayed more than 15
+         minutes",
+        output_dir / "chart_top_destinations.png")
+
+    PRINT "All tables and charts are in:", output_dir.resolve()
+
+
+# ----------------------------------------------------------------------------
+# ENTRY POINT
+# ----------------------------------------------------------------------------
+
+# Run main() only when the file is started directly with python3,
+# not when it is imported by another program.
+IF __name__ == "__main__":
+    main()
