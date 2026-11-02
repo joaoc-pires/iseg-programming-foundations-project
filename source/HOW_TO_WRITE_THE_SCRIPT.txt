@@ -1,0 +1,390 @@
+# ============================================================================
+# PROCESS LISBON FLIGHTS - PSEUDO-CODE
+# ============================================================================
+#
+# This file describes process_lisbon_flights.py in pseudo-code, in the same
+# order as the real script. Each line translates into one or a few lines of
+# Python.
+#
+# The script reads the monthly EUROCONTROL "Flights" files, named
+# Flights_YYYYMM.csv, keeps the flights departing Lisbon (ICAO code LPPT)
+# between 1 October 2024 and 31 October 2025, calculates how far the actual
+# departure and arrival times were from the filed flight-plan times, and
+# writes the result to one CSV file.
+#
+# Run it from the source folder with this command, typed on one line:
+#
+# python3 process_lisbon_flights.py --input-dir ../raw-data --output lisbon_flights_202410_202510.csv
+#
+# Filed flight-plan times are not always the times shown to passengers, so
+# the results are flight-plan deviations, not passenger delays.
+#
+# ----------------------------------------------------------------------------
+# KEYWORDS
+# ----------------------------------------------------------------------------
+#
+# IMPORT x              load a module          Python: import x
+# CONSTANT X = value    a value that never changes, written in capitals
+# VARIABLE x = value    create a variable      Python: x = value
+# x = value             change a variable that already exists
+# FUNCTION f(a, b):     define a function      Python: def f(a, b):
+# RETURN x              leave the function and give back x
+# IF / ELSE             Python: if / else
+# FOR EACH x IN y:      repeat for every item  Python: for x in y:
+# SKIP                  go to the next item    Python: continue
+# TRY: / ON error:      catch an error         Python: try: / except ...:
+# WITH ... AS f:        open a file; it is closed when the block ends
+#                       Python: with open(...) as f:
+# ADD x TO y            Python: y.append(x) for a list, y.add(x) for a set
+# PRINT                 Python: print(...)
+#
+# Indentation marks the lines that belong to a block, exactly as in Python.
+
+
+# ----------------------------------------------------------------------------
+# IMPORTS
+# ----------------------------------------------------------------------------
+
+IMPORT argparse
+IMPORT csv
+IMPORT date, datetime FROM datetime
+IMPORT Path FROM pathlib
+
+
+# ----------------------------------------------------------------------------
+# SETTINGS
+# ----------------------------------------------------------------------------
+
+CONSTANT ORIGIN_AIRPORT = "LPPT"
+
+# Months as text, compared with the month in each file name.
+CONSTANT FIRST_MONTH = "202410"
+CONSTANT LAST_MONTH  = "202510"
+
+CONSTANT PERIOD_START = date(2024, 10, 1)
+CONSTANT PERIOD_END   = date(2025, 10, 31)
+
+# Layout of the timestamps in the files, for example 01-11-2024 00:40:00.
+# %d day, %m month, %Y four-digit year, %H hour (00-23), %M minutes,
+# %S seconds.
+CONSTANT TIME_FORMAT = "%d-%m-%Y %H:%M:%S"
+
+# Deviations above 24 hours are counted in the summary, never removed.
+CONSTANT LARGE_DEVIATION_MIN = 24 * 60
+
+CONSTANT DEFAULT_OUTPUT_NAME = "lisbon_flights_202410_202510.csv"
+
+# A dictionary: output column name -> input column name.
+# The input names are in lower case with single spaces, because each file
+# header is converted to that form before use (see process_file).
+CONSTANT INPUT_COLUMNS = {
+    "flight_id":              "ectrl id",
+    "origin":                 "adep",
+    "destination":            "ades",
+    "airline":                "ac operator",
+    "filed_departure":        "filed off block time",
+    "actual_departure":       "actual off block time",
+    "filed_arrival":          "filed arrival time",
+    "actual_arrival":         "actual arrival time",
+    "icao_flight_type":       "icao flight type",
+    "statfor_market_segment": "statfor market segment",
+    "ac_type":                "ac type",
+}
+
+CONSTANT TIME_COLUMNS = ["filed_departure", "actual_departure",
+                         "filed_arrival", "actual_arrival"]
+
+# The columns of the output file, in order.
+CONSTANT OUTPUT_COLUMNS = [
+    "flight_id", "flight_date", "origin", "destination", "airline",
+    "filed_departure", "actual_departure", "departure_deviation_min",
+    "filed_arrival", "actual_arrival", "arrival_deviation_min",
+    "icao_flight_type", "source_file", "statfor_market_segment", "ac_type",
+]
+
+
+# ----------------------------------------------------------------------------
+# FUNCTIONS
+# ----------------------------------------------------------------------------
+
+# Returns the Flights_YYYYMM.csv files inside the study period, oldest first.
+FUNCTION find_files(input_dir):
+    VARIABLE files = empty list
+
+    # input_dir.glob("Flights_??????.csv") lists the matching files; each ?
+    # is exactly one character. Sorting by name also sorts by month, and
+    # makes the order the same on every computer.
+    FOR EACH path IN sorted(input_dir.glob("Flights_??????.csv")):
+        # path.stem is the name without ".csv": "Flights_202411".
+        # path.stem[8:] takes everything from position 8: "202411".
+        VARIABLE month = path.stem[8:]
+        IF FIRST_MONTH <= month <= LAST_MONTH:
+            ADD path TO files
+
+    RETURN files
+
+
+# Converts a text such as "01-11-2024 00:40:00" into a datetime.
+# Returns None if the text is empty or not a valid timestamp.
+FUNCTION parse_time(text):
+    # strptime raises a ValueError if the text does not match the format.
+    # Catching it stops one bad value from crashing the whole program.
+    TRY:
+        RETURN datetime.strptime(text, TIME_FORMAT)
+    ON ValueError:
+        RETURN None
+
+
+# Returns actual minus filed, in minutes. Positive = later than filed.
+# Returns None if either time is missing.
+FUNCTION deviation_minutes(actual, filed):
+    IF actual is None OR filed is None:
+        RETURN None
+
+    # Subtracting two datetimes gives a timedelta. Because the full date is
+    # included, 23:50 -> 00:20 the next day correctly gives 30 minutes.
+    VARIABLE difference = actual - filed
+
+    # Use total_seconds(), not .seconds: .seconds ignores days and gives a
+    # wrong, large positive number for negative differences.
+    RETURN round(difference.total_seconds() / 60, 2)
+
+
+# Reads one monthly file and adds its Lisbon departures to the flights list.
+# flights, seen_rows and stats are created in main and shared by all files.
+# Returns False if the file cannot be used, True otherwise.
+FUNCTION process_file(path, flights, seen_rows, stats):
+
+    # encoding "utf-8-sig": reads UTF-8 and removes the invisible
+    #   byte-order mark that some programs (e.g. Excel) put at the start.
+    # newline "": required whenever a file is used with the csv module.
+    WITH open(path, "r", encoding="utf-8-sig", newline="") AS file:
+
+        # csv.DictReader(file, restval="") reads the header, then gives one
+        # row at a time as a dictionary {column name: value}. Only one row is
+        # in memory at a time, which matters for files of ~200 MB.
+        # restval="" fills in "" if a row has fewer values than the header.
+        VARIABLE reader = csv.DictReader(file, restval="")
+
+        IF reader.fieldnames is None:
+            PRINT "WARNING: file is empty", path.name
+            RETURN False
+
+        # Clean the header: " ".join(name.split()).lower() turns
+        # "  ECTRL   ID " into "ectrl id". Then make the reader use the
+        # cleaned names, so values are read as row["adep"].
+        VARIABLE clean_names = empty list
+        FOR EACH name IN reader.fieldnames:
+            ADD " ".join(name.split()).lower() TO clean_names
+        reader.fieldnames = clean_names
+
+        # Check that every column we need is present.
+        VARIABLE missing = empty list
+        FOR EACH name IN INPUT_COLUMNS.values():
+            IF name not in clean_names:
+                ADD name TO missing
+        IF len(missing) > 0:
+            PRINT "WARNING: file skipped, missing columns:", missing
+            RETURN False
+
+        FOR EACH row IN reader:
+            stats["Records examined"] += 1
+
+            # About 99% of rows are not Lisbon departures; reject them first.
+            IF row["adep"].strip() != ORIGIN_AIRPORT:
+                SKIP
+            stats["LPPT departures"] += 1
+
+            # Copy the columns we need under the output names.
+            # .strip() removes spaces at the start and end.
+            VARIABLE values = empty dictionary
+            FOR EACH output_name, input_name IN INPUT_COLUMNS.items():
+                values[output_name] = row[input_name].strip()
+
+            # Exact duplicates: keep the first copy, skip the others.
+            # A set finds an item instantly, however large it is. Sets only
+            # accept unchangeable items, so the values become a tuple.
+            VARIABLE signature = tuple(values.values())
+            IF signature in seen_rows:
+                stats["Exact duplicates"] += 1
+                PRINT "WARNING: exact duplicate skipped", path.name,
+                      reader.line_num
+                SKIP
+            ADD signature TO seen_rows
+
+            # Convert the four times. Text that cannot be converted is
+            # malformed: it is reported, and the time is left empty.
+            # An empty value is normal missing data, not malformed.
+            VARIABLE times = empty dictionary
+            VARIABLE malformed = empty list
+            FOR EACH column IN TIME_COLUMNS:
+                times[column] = parse_time(values[column])
+                IF values[column] != "" AND times[column] is None:
+                    ADD column TO malformed
+            IF len(malformed) > 0:
+                stats["Malformed records"] += 1
+                PRINT "WARNING: malformed", malformed, path.name,
+                      reader.line_num
+
+            # Date the flight by the filed departure time, or by the actual
+            # departure time if the filed one is missing.
+            VARIABLE reference = times["filed_departure"]
+            IF reference is None:
+                reference = times["actual_departure"]
+            IF reference is None:
+                stats["Without any departure time"] += 1
+                SKIP
+
+            # Check the period on every row: a monthly file can contain
+            # flights from the last day of the previous month.
+            VARIABLE flight_date = reference.date()
+            IF flight_date < PERIOD_START OR flight_date > PERIOD_END:
+                stats["Outside requested period"] += 1
+                SKIP
+
+            VARIABLE departure_dev = deviation_minutes(
+                times["actual_departure"], times["filed_departure"])
+            VARIABLE arrival_dev = deviation_minutes(
+                times["actual_arrival"], times["filed_arrival"])
+
+            # Sanity checks: only counted, never removed, because a very
+            # long delay can be a real event.
+            IF departure_dev is not None
+               AND abs(departure_dev) > LARGE_DEVIATION_MIN:
+                stats["Deviations beyond 24h"] += 1
+            IF arrival_dev is not None
+               AND abs(arrival_dev) > LARGE_DEVIATION_MIN:
+                stats["Deviations beyond 24h"] += 1
+            IF times["actual_arrival"] is not None
+               AND times["actual_departure"] is not None:
+                IF times["actual_arrival"] < times["actual_departure"]:
+                    stats["Arrival before departure"] += 1
+
+            # Complete the output row. isoformat() writes dates and times in
+            # ISO 8601, e.g. 2024-11-01 and 2024-11-01T10:30:00, without any
+            # time-zone conversion (EUROCONTROL times are UTC).
+            # Missing values become "", an empty field in the CSV.
+            values["flight_date"] = flight_date.isoformat()
+            FOR EACH column IN TIME_COLUMNS:
+                IF times[column] is None:
+                    values[column] = ""
+                ELSE:
+                    values[column] = times[column].isoformat()
+            IF departure_dev is None:
+                departure_dev = ""
+            IF arrival_dev is None:
+                arrival_dev = ""
+            values["departure_deviation_min"] = departure_dev
+            values["arrival_deviation_min"] = arrival_dev
+            values["source_file"] = path.name
+
+            ADD values TO flights
+
+    RETURN True
+
+
+# Sort key for one row: departure time, then flight ID.
+# ISO 8601 text sorts in time order, because the year comes first and every
+# part has a fixed width. The flight ID makes the order the same on every
+# run when two flights share a departure time.
+FUNCTION sort_key(row):
+    VARIABLE departure = row["filed_departure"]
+    IF departure == "":
+        departure = row["actual_departure"]
+    RETURN (departure, row["flight_id"])
+
+
+# Writes the rows to a UTF-8 CSV file, columns in OUTPUT_COLUMNS order.
+FUNCTION write_csv(flights, output_path):
+    # Mode "w" creates the file, or empties it if it exists.
+    # Plain "utf-8" (no -sig) so no byte-order mark is written.
+    WITH open(output_path, "w", encoding="utf-8", newline="") AS file:
+        # csv.DictWriter writes each dictionary as one row, putting each
+        # value in the column named by its key.
+        VARIABLE writer = csv.DictWriter(file, fieldnames=OUTPUT_COLUMNS)
+        writer.writeheader()
+        FOR EACH row IN flights:
+            writer.writerow(row)
+
+
+FUNCTION main():
+    # Command-line options. Path(__file__).resolve().parent is the folder
+    # that contains this script; both defaults point there.
+    VARIABLE script_dir = Path(__file__).resolve().parent
+    VARIABLE parser = argparse.ArgumentParser()
+    parser.add_argument("--input-dir", type=Path, default=script_dir)
+    parser.add_argument("--output", type=Path,
+                        default=script_dir / DEFAULT_OUTPUT_NAME)
+    # After parsing, "--input-dir" is read as args.input_dir.
+    VARIABLE args = parser.parse_args()
+
+    IF NOT args.input_dir.is_dir():
+        PRINT "ERROR: input folder not found"
+        RETURN
+
+    VARIABLE files = find_files(args.input_dir)
+    IF len(files) == 0:
+        PRINT "ERROR: no Flights_YYYYMM.csv files found"
+        RETURN
+
+    # Counters for the summary; process_file adds to them.
+    VARIABLE stats = {
+        "Records examined": 0,
+        "LPPT departures": 0,
+        "Outside requested period": 0,
+        "Without any departure time": 0,
+        "Malformed records": 0,
+        "Exact duplicates": 0,
+        "Deviations beyond 24h": 0,
+        "Arrival before departure": 0,
+    }
+    VARIABLE flights = empty list
+    # set() creates an empty set; {} would create an empty dictionary.
+    VARIABLE seen_rows = set()
+    VARIABLE processed = 0
+
+    FOR EACH path IN files:
+        PRINT "Processing", path.name
+        IF process_file(path, flights, seen_rows, stats):
+            processed += 1
+
+    # sort_key is passed without brackets: sort calls it for each row.
+    flights.sort(key=sort_key)
+    write_csv(flights, args.output)
+
+    # Count the deviations for the summary.
+    VARIABLE valid_departure = 0
+    VARIABLE valid_arrival = 0
+    VARIABLE missing_pair = 0
+    FOR EACH row IN flights:
+        IF row["departure_deviation_min"] != "":
+            valid_departure += 1
+        IF row["arrival_deviation_min"] != "":
+            valid_arrival += 1
+        IF row["departure_deviation_min"] == ""
+           OR row["arrival_deviation_min"] == "":
+            missing_pair += 1
+
+    PRINT "Monthly files discovered:", len(files)
+    PRINT "Files successfully processed:", processed
+    FOR EACH label, count IN stats.items():
+        PRINT label, count
+    PRINT "Flights written:", len(flights)
+    PRINT "Valid departure deviations:", valid_departure
+    PRINT "Valid arrival deviations:", valid_arrival
+    PRINT "Missing either timestamp pair:", missing_pair
+    # flights is sorted: [0] is the first row, [-1] the last.
+    IF len(flights) > 0:
+        PRINT "First flight date:", flights[0]["flight_date"]
+        PRINT "Last flight date:", flights[-1]["flight_date"]
+    PRINT "Output CSV:", args.output.resolve()
+
+
+# ----------------------------------------------------------------------------
+# ENTRY POINT
+# ----------------------------------------------------------------------------
+
+# Run main() only when the file is started directly with python3,
+# not when it is imported by another program.
+IF __name__ == "__main__":
+    main()
