@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block subtitle %}Where the data comes from and how to read it.{% endblock %}
+
+{% block content %}
+<section class="card authors">
+  <div>
+    <h2>👥 Authors</h2>
+    <ul>
+      <li>Alexandra García (l68135)</li>
+      <li>João Pires (l67304)</li>
+      <li>Michael AmicAngelo (l67556)</li>
+      <li>Rui Conceição (l67307)</li>
+    </ul>
+  </div>
+  <div class="logos">
+    <img class="logo-ulisboa" src="{{ url_for('static', filename='img/logo-ulisboa.png') }}" alt="Universidade de Lisboa">
+    <img class="logo-iseg" src="{{ url_for('static', filename='img/logo-iseg.png') }}" alt="ISEG">
+  </div>
+</section>
+
+<section class="grid-2">
+  <div class="card">
+    <h2>📦 The data</h2>
+    <p>
+      Monthly "Flights" files from EUROCONTROL, November 2024 to October 2025.
+      <code>process_lisbon_flights.py</code> keeps the flights departing Lisbon (ICAO code LPPT),
+      and <code>analyse_lisbon_flights.py</code> calculates the statistics shown in this app.
+    </p>
+    <p>Only scheduled flights (ICAO flight type "S") are analysed.</p>
+  </div>
+
+  <div class="card">
+    <h2>📏 What "delay" means here</h2>
+    <p>
+      Deviation = actual time minus the <strong>filed flight-plan</strong> time. Positive means later
+      than filed. Filed times are not always the times shown to passengers, so these numbers are
+      flight-plan deviations, not passenger delays.
+    </p>
+    <p>A flight is <strong>on time</strong> when it is at most 15 minutes late, the industry standard. This includes early flights.</p>
+  </div>
+
+  <div class="card">
+    <h2>🕐 Times</h2>
+    <p>
+      All times are UTC, as given by EUROCONTROL. Lisbon is UTC+0 in winter and UTC+1 in summer,
+      so in summer a 09:00 local departure appears as 08:00.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>🔎 Reading the tables</h2>
+    <p>
+      Airlines and destinations are ICAO codes (e.g. TAP, LEMD). The code ZZZ means the operator was
+      not disclosed; it is not an airline, so it is left out of the airline ranking.
+    </p>
+    <p>
+      Groups with fewer than 100 flights are left out, because their percentages are unreliable.
+      Extreme values are kept; the median is shown next to the mean because a few very large
+      values do not move it.
+    </p>
+  </div>
+</section>
+
+<section class="card">
+  <h2>🙏 Credits</h2>
+  <ul>
+    <li><strong>Flight data:</strong> <a href="https://www.eurocontrol.int/dashboard/rnd-data-archive">EUROCONTROL Aviation Data Repository for Research</a></li>
+    <li><strong>Web framework:</strong> <a href="https://flask.palletsprojects.com/">Flask</a> (BSD-3-Clause)</li>
+    <li><strong>Charts:</strong> <a href="https://www.chartjs.org/">Chart.js</a> (MIT)</li>
+    <li><strong>Map:</strong> <a href="https://leafletjs.com/">Leaflet</a> (BSD-2-Clause), with tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Esri, DeLorme, NAVTEQ</li>
+    <li><strong>Airport names and coordinates:</strong> <a href="https://github.com/mborsetti/airportsdata">airportsdata</a> (MIT)</li>
+    <li><strong>Font:</strong> <a href="https://fonts.google.com/specimen/Nunito">Nunito</a> (SIL Open Font License)</li>
+  </ul>
+  <p class="note">
+    <strong>AI Disclosure:</strong> Claude Code (Claude Opus 5.5) was used for template building,
+    debugging, and suggestions.
+  </p>
+</section>
+{% endblock %}

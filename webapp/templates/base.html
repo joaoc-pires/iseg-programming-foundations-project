@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · Lisbon Departures</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('overview') }}">✈️ Lisbon Departures</a>
+    <nav>
+      {% for endpoint, label in nav %}
+        <a href="{{ url_for(endpoint) }}" class="{{ 'active' if request.endpoint == endpoint }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
+  </header>
+
+  <main>
+    <h1 class="page-title">{{ title }}</h1>
+    <p class="page-subtitle">{% block subtitle %}{% endblock %}</p>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer>
+    Scheduled flights departing Lisbon (LPPT), Nov 2024 – Oct 2025 ·
+    Deviation = actual minus filed flight-plan time · Times in UTC · Source: EUROCONTROL
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script>
+    // Shared look for every chart.
+    const DEPARTURE_COLOR = "#7c8cff";
+    const ARRIVAL_COLOR = "#ff8fab";
+    Chart.defaults.font.family = "Nunito, sans-serif";
+    Chart.defaults.color = "#5b5775";
+    Chart.defaults.maintainAspectRatio = false;
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

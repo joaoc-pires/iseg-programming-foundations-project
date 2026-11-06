@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import summary_table %}
+
+{% block subtitle %}Who flies from Lisbon, and how punctual they are. Airlines with at least 100 flights.{% endblock %}
+
+{% block content %}
+<section class="grid-2">
+  <div class="card">
+    <h2>Top 15 airlines by number of flights</h2>
+    <p class="muted">% of flights delayed more than 15 minutes. Flight count in brackets.</p>
+    <div class="chart-box tall"><canvas id="top-chart"></canvas></div>
+  </div>
+
+  <div class="card">
+    <h2>Compare an airline</h2>
+    <form method="get" class="picker">
+      <label for="code">Airline</label>
+      <select id="code" name="code" onchange="this.form.submit()">
+        {% for row in airlines %}
+          <option value="{{ row.label }}" {{ 'selected' if row.label == selected.label }}>
+            {{ row.label }} ({{ row.flights | count }} flights)
+          </option>
+        {% endfor %}
+      </select>
+    </form>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th></th><th class="num">{{ selected.label }}</th><th class="num">All flights</th><th></th></tr>
+        </thead>
+        <tbody>
+          {% for metric in comparison %}
+          <tr>
+            <td>{{ metric.label }}</td>
+            {% if metric.is_pct %}
+              <td class="num"><strong>{{ metric.airline | pct }}</strong></td>
+              <td class="num">{{ metric.overall | pct }}</td>
+            {% else %}
+              <td class="num"><strong>{{ metric.airline | minutes }}</strong></td>
+              <td class="num">{{ metric.overall | minutes }}</td>
+            {% endif %}
+            <td>
+              {% if metric.better %}<span class="badge good">better</span>
+              {% else %}<span class="badge bad">worse</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h2 class="spaced">By market segment</h2>
+    {{ summary_table(segments, "Segment") }}
+  </div>
+</section>
+
+<section class="card">
+  <h2>All airlines</h2>
+  <p class="muted">ICAO operator codes. ZZZ (operator not disclosed) is left out.</p>
+  {{ summary_table(airlines, "Airline") }}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const top15 = {{ top | tojson }};
+  new Chart(document.getElementById("top-chart"), {
+    type: "bar",
+    data: {
+      labels: top15.labels,
+      datasets: [
+        { label: "Departure", data: top15.departure, backgroundColor: DEPARTURE_COLOR, borderRadius: 6 },
+        { label: "Arrival", data: top15.arrival, backgroundColor: ARRIVAL_COLOR, borderRadius: 6 },
+      ],
+    },
+    options: {
+      indexAxis: "y",     // horizontal bars
+      scales: { x: { beginAtZero: true, title: { display: true, text: "% delayed > 15 min" } } },
+      plugins: { tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw}%` } } },
+    },
+  });
+</script>
+{% endblock %}

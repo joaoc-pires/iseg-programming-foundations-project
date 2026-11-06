@@ -1,0 +1,319 @@
+/* Colours used across the app. */
+:root {
+  --bg: #f6f4ff;
+  --card: #ffffff;
+  --ink: #2e2a47;
+  --muted: #7a7696;
+  --line: #ebe8f7;
+  --accent: #5b4bdb;
+  --departure: #7c8cff;
+  --arrival: #ff8fab;
+  --blue: #7c8cff;
+  --green: #4caf7d;
+  --purple: #a77bf3;
+  --pink: #ff8fab;
+  --amber: #f5b041;
+  --radius: 18px;
+  --shadow: 0 6px 20px rgba(91, 75, 219, 0.08);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Nunito", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+/* ---------- Top bar and footer ---------- */
+
+.topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 28px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+  position: sticky;
+  top: 0;
+  z-index: 1000;      /* above the map */
+}
+
+.brand {
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+nav { display: flex; flex-wrap: wrap; gap: 6px; }
+
+nav a {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+nav a:hover { background: var(--bg); color: var(--ink); }
+nav a.active { background: var(--accent); color: #fff; }
+
+main { max-width: 1200px; margin: 0 auto; padding: 28px; }
+
+.page-title { margin: 0; font-size: 2rem; font-weight: 800; }
+.page-subtitle { margin: 4px 0 24px; color: var(--muted); }
+
+footer {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+  padding: 24px 16px 32px;
+}
+
+/* ---------- Cards and layout ---------- */
+
+.card {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 22px 24px;
+  margin-bottom: 20px;
+  min-width: 0;
+}
+
+.card h2 { margin: 0 0 6px; font-size: 1.15rem; }
+.card h2.spaced { margin-top: 24px; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 20px;
+}
+.grid-2 .card { margin-bottom: 0; }
+.grid-2 + .card, .card + .grid-2 { margin-top: 20px; }
+
+.muted { color: var(--muted); margin-top: 0; }
+.small { display: block; font-size: 0.8rem; }
+.note { color: var(--muted); font-size: 0.9rem; margin-bottom: 0; }
+
+code { background: var(--bg); padding: 1px 6px; border-radius: 6px; }
+
+/* ---------- KPI cards (overview) ---------- */
+
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 18px;
+}
+
+.kpi {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px 22px;
+  border-top: 6px solid var(--tone);
+}
+
+.kpi-label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.kpi-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-right: 8px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--tone) 18%, white);
+  font-size: 1rem;
+}
+
+.kpi-value {
+  font-size: 2.3rem;
+  font-weight: 800;
+  margin: 10px 0 2px;
+  color: var(--ink);
+}
+
+.kpi-sub { color: var(--muted); font-size: 0.9rem; }
+
+.tone-blue { --tone: var(--blue); }
+.tone-green { --tone: var(--green); }
+.tone-purple { --tone: var(--purple); }
+.tone-pink { --tone: var(--pink); }
+.tone-amber { --tone: var(--amber); }
+
+/* ---------- Charts ---------- */
+
+.chart-box { position: relative; height: 320px; }
+.chart-box.tall { height: 520px; }
+
+.chart-img { width: 100%; border-radius: 12px; }
+
+/* ---------- Strip chart (distribution) ---------- */
+
+.strip {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.strip-name { font-weight: 800; }
+
+.strip-track {
+  position: relative;
+  height: 34px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+
+.strip-box {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  background: color-mix(in srgb, var(--departure) 45%, white);
+  border-radius: 8px;
+}
+
+.strip:nth-of-type(2) .strip-box { background: color-mix(in srgb, var(--arrival) 45%, white); }
+
+.strip-median, .strip-p90, .strip-limit {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+}
+
+.strip-median { background: var(--ink); }
+.strip-p90 { background: var(--amber); }
+.strip-limit { background: none; border-left: 2px dashed var(--muted); top: 0; bottom: 0; }
+
+.strip-mean {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: #fff;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+}
+
+.strip-axis { position: relative; height: 20px; font-size: 0.8rem; color: var(--muted); }
+.strip-axis span { position: absolute; transform: translateX(-50%); }
+
+.legend { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 14px; font-size: 0.85rem; color: var(--muted); }
+.key { display: inline-block; width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; border-radius: 4px; }
+.key-box { background: color-mix(in srgb, var(--departure) 45%, white); }
+.key-median { background: var(--ink); width: 4px; }
+.key-mean { border: 3px solid var(--accent); border-radius: 50%; }
+.key-p90 { background: var(--amber); width: 4px; }
+.key-limit { border-left: 2px dashed var(--muted); width: 2px; border-radius: 0; }
+
+/* ---------- Tables ---------- */
+
+.table-wrap { overflow-x: auto; max-height: 520px; overflow-y: auto; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+th { color: var(--muted); font-weight: 800; background: var(--card); position: sticky; top: 0; }
+thead tr:nth-child(2) th { top: 36px; }
+tbody tr:hover { background: var(--bg); }
+
+.num { text-align: right; white-space: nowrap; }
+th.group { text-align: center; }
+th.dep { color: var(--departure); }
+th.arr { color: var(--arrival); }
+
+.badge { padding: 2px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 800; }
+.badge.good { background: #e3f6ec; color: #2f8a5a; }
+.badge.bad { background: #ffe6ec; color: #c43c5c; }
+
+/* ---------- Airline picker ---------- */
+
+.picker { display: flex; align-items: center; gap: 10px; margin: 8px 0 14px; }
+.picker label { font-weight: 800; }
+.picker select {
+  flex: 1;
+  padding: 8px 12px;
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  font: inherit;
+  background: var(--card);
+}
+
+/* ---------- Map (destinations) ---------- */
+
+#map { height: 560px; border-radius: 14px; }
+
+.map-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 16px;
+}
+
+.toggle { display: inline-flex; background: var(--bg); border-radius: 999px; padding: 4px; }
+.toggle button {
+  border: 0;
+  background: none;
+  padding: 8px 18px;
+  border-radius: 999px;
+  font: inherit;
+  font-weight: 800;
+  color: var(--muted);
+  cursor: pointer;
+}
+.toggle button.active { background: var(--accent); color: #fff; }
+
+.map-legend { display: flex; flex-wrap: wrap; gap: 28px; font-size: 0.8rem; color: var(--muted); }
+.legend-title { font-weight: 800; margin-bottom: 4px; }
+
+.gradient {
+  width: 180px;
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgb(76, 175, 125), rgb(245, 176, 65), rgb(224, 85, 97));
+}
+.gradient-labels { display: flex; justify-content: space-between; }
+
+.widths { display: flex; gap: 14px; align-items: center; }
+.widths span { display: flex; align-items: center; gap: 4px; }
+.widths i { display: inline-block; width: 26px; background: var(--muted); border-radius: 4px; }
+.widths b { font-weight: 600; }
+
+/* ---------- Authors card (about) ---------- */
+
+.authors { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; }
+.logos { display: flex; gap: 24px; align-items: center; }
+.logos img { width: auto; }
+.logos .logo-ulisboa { height: 99px; }    /* 90px + 10% */
+.logos .logo-iseg { height: 85.5px; }     /* 90px - 5% */
+
+/* ---------- Phones ---------- */
+
+@media (max-width: 640px) {
+  main { padding: 18px 16px; }
+  .topbar { padding: 12px 16px; }
+  .grid-2 { grid-template-columns: 1fr; }
+  .kpi-value { font-size: 2rem; }
+  #map { height: 420px; }
+  .strip { grid-template-columns: 70px 1fr; }
+}

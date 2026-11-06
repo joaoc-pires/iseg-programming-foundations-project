@@ -1,0 +1,36 @@
+{# Table used for segments, airlines and destinations. #}
+{% macro summary_table(rows, heading) %}
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th rowspan="2">{{ heading }}</th>
+        <th rowspan="2" class="num">Flights</th>
+        <th colspan="3" class="group dep">Departure</th>
+        <th colspan="3" class="group arr">Arrival</th>
+      </tr>
+      <tr>
+        <th class="num">Mean</th><th class="num">Median</th><th class="num">&gt; 15 min</th>
+        <th class="num">Mean</th><th class="num">Median</th><th class="num">&gt; 15 min</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td>
+          <strong>{{ row.label }}</strong>
+          {% if row.name %}<span class="muted small">{{ row.name }}, {{ row.country }}</span>{% endif %}
+        </td>
+        <td class="num">{{ row.flights | count }}</td>
+        <td class="num">{{ row.dep_mean_min | minutes }}</td>
+        <td class="num">{{ row.dep_median_min | minutes }}</td>
+        <td class="num">{{ row.dep_delayed_over_15_pct | pct }}</td>
+        <td class="num">{{ row.arr_mean_min | minutes }}</td>
+        <td class="num">{{ row.arr_median_min | minutes }}</td>
+        <td class="num">{{ row.arr_delayed_over_15_pct | pct }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}

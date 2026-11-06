@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% from "_macros.html" import summary_table %}
+
+{% block head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+{% endblock %}
+
+{% block subtitle %}Every route from Lisbon with at least 100 flights. Hover a line for details.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <div class="map-header">
+    <div class="toggle" role="group" aria-label="Show departure or arrival delays">
+      <button type="button" data-mode="departure" class="active">Departure</button>
+      <button type="button" data-mode="arrival">Arrival</button>
+    </div>
+
+    <div class="map-legend">
+      <div>
+        <div class="legend-title">Colour: % delayed &gt; 15 min</div>
+        <div class="gradient"></div>
+        <div class="gradient-labels"><span id="pct-min"></span><span id="pct-max"></span></div>
+      </div>
+      <div>
+        <div class="legend-title">Thickness: mean delay</div>
+        <div class="widths">
+          <span><i style="height: 1px"></i><b id="mean-min"></b></span>
+          <span><i style="height: 4px"></i><b id="mean-mid"></b></span>
+          <span><i style="height: 8px"></i><b id="mean-max"></b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="map"></div>
+
+  {% if missing %}
+  <p class="note">Not on the map (no coordinates found): {{ missing | join(", ") }}</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>All destinations</h2>
+  {{ summary_table(destinations, "Destination") }}
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+  const lisbon = {{ lisbon | tojson }};
+  const destinations = {{ destinations | tojson }};
+
+  const map = L.map("map");
+  // Esri's tile address has {y} before {x}.
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
+    attribution: "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
+    maxZoom: 16,
+  }).addTo(map);
+
+  // Zoom so that Lisbon and every destination are visible.
+  const points = [[lisbon.lat, lisbon.lon]];
+  for (const d of destinations) points.push([d.lat, d.lon]);
+  map.fitBounds(points, { padding: [20, 20] });
+
+  const routes = L.layerGroup().addTo(map);
+
+  // Colour scale: green (few delays) -> amber -> red (many delays).
+  const STOPS = [[76, 175, 125], [245, 176, 65], [224, 85, 97]];
+  function colourFor(t) {
+    const scaled = t * (STOPS.length - 1);
+    const i = Math.min(Math.floor(scaled), STOPS.length - 2);
+    const f = scaled - i;
+    const rgb = STOPS[i].map((v, k) => Math.round(v + (STOPS[i + 1][k] - v) * f));
+    return `rgb(${rgb.join(",")})`;
+  }
+
+  // Draws every route for "departure" or "arrival".
+  function draw(mode) {
+    const prefix = mode === "departure" ? "dep" : "arr";
+    const pctKey = `${prefix}_delayed_over_15_pct`;
+    const meanKey = `${prefix}_mean_min`;
+    const medianKey = `${prefix}_median_min`;
+
+    const pcts = destinations.map((d) => d[pctKey]);
+    const means = destinations.map((d) => d[meanKey]);
+    const minPct = Math.min(...pcts), maxPct = Math.max(...pcts);
+    const minMean = Math.min(...means), maxMean = Math.max(...means);
+
+    routes.clearLayers();
+
+    // Thickest lines first, so the thin ones stay visible on top.
+    const sorted = [...destinations].sort((a, b) => b[meanKey] - a[meanKey]);
+    for (const d of sorted) {
+      const colour = colourFor((d[pctKey] - minPct) / (maxPct - minPct || 1));
+      const weight = 1 + 7 * (d[meanKey] - minMean) / (maxMean - minMean || 1);
+      const info = `<strong>${d.label}</strong> · ${d.name}<br>${d.city}, ${d.country}<br>
+        ${d.flights.toLocaleString()} flights<br>
+        ${d[pctKey]}% delayed &gt; 15 min<br>
+        Mean ${d[meanKey]} min · Median ${d[medianKey]} min`;
+
+      const line = L.polyline([[lisbon.lat, lisbon.lon], [d.lat, d.lon]],
+                              { color: colour, weight: weight, opacity: 0.7 });
+      line.bindTooltip(info, { sticky: true });
+      line.on("mouseover", () => line.setStyle({ opacity: 1 }));
+      line.on("mouseout", () => line.setStyle({ opacity: 0.7 }));
+      routes.addLayer(line);
+
+      routes.addLayer(L.circleMarker([d.lat, d.lon],
+        { radius: 3, color: colour, fillColor: colour, fillOpacity: 1, weight: 0 }).bindTooltip(info));
+    }
+
+    L.circleMarker([lisbon.lat, lisbon.lon],
+      { radius: 7, color: "#fff", weight: 2, fillColor: "#5b4bdb", fillOpacity: 1 })
+      .bindTooltip("<strong>Lisbon (LPPT)</strong>").addTo(routes);
+
+    document.getElementById("pct-min").textContent = `${minPct}%`;
+    document.getElementById("pct-max").textContent = `${maxPct}%`;
+    document.getElementById("mean-min").textContent = `${minMean} min`;
+    document.getElementById("mean-mid").textContent = `${((minMean + maxMean) / 2).toFixed(1)} min`;
+    document.getElementById("mean-max").textContent = `${maxMean} min`;
+  }
+
+  // Departure / Arrival buttons.
+  const buttons = document.querySelectorAll(".toggle button");
+  for (const button of buttons) {
+    button.addEventListener("click", () => {
+      for (const other of buttons) other.classList.toggle("active", other === button);
+      draw(button.dataset.mode);
+    });
+  }
+
+  draw("departure");
+</script>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block subtitle %}A year of departures from Lisbon at a glance.{% endblock %}
+
+{% block content %}
+<section class="kpi-grid">
+  {% for card in cards %}
+  <div class="kpi tone-{{ card.tone }}">
+    <div class="kpi-label"><span class="kpi-icon">{{ card.icon }}</span>{{ card.label }}</div>
+    <div class="kpi-value">{{ card.value }}</div>
+    <div class="kpi-sub">{{ card.sub }}</div>
+  </div>
+  {% endfor %}
+</section>
+{% endblock %}

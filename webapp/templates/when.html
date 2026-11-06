@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block subtitle %}Share of flights delayed more than 15 minutes, by month, day and hour.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>By month</h2>
+  <p class="muted">Summer is the hardest season: July is the peak, followed by August.</p>
+  <div class="chart-box"><canvas id="month-chart"></canvas></div>
+</section>
+
+<section class="grid-2">
+  <div class="card">
+    <h2>By day of the week</h2>
+    <div class="chart-box"><canvas id="weekday-chart"></canvas></div>
+  </div>
+  <div class="card">
+    <h2>By hour of filed departure</h2>
+    <p class="muted">UTC. Lisbon is UTC+1 in summer. Hours with fewer than 100 flights are not shown.</p>
+    <div class="chart-box"><canvas id="hour-chart"></canvas></div>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Draws one chart with a departure and an arrival series.
+  function drawChart(canvasId, type, data) {
+    new Chart(document.getElementById(canvasId), {
+      type: type,
+      data: {
+        labels: data.labels,
+        datasets: [
+          { label: "Departure", data: data.departure, backgroundColor: DEPARTURE_COLOR,
+            borderColor: DEPARTURE_COLOR, borderRadius: 6, tension: 0.3 },
+          { label: "Arrival", data: data.arrival, backgroundColor: ARRIVAL_COLOR,
+            borderColor: ARRIVAL_COLOR, borderRadius: 6, tension: 0.3 },
+        ],
+      },
+      options: {
+        scales: { y: { beginAtZero: true, title: { display: true, text: "% delayed > 15 min" } } },
+        plugins: { tooltip: { callbacks: { label: (item) => `${item.dataset.label}: ${item.raw}%` } } },
+      },
+    });
+  }
+
+  drawChart("month-chart", "line", {{ by_month | tojson }});
+  drawChart("weekday-chart", "bar", {{ by_weekday | tojson }});
+  drawChart("hour-chart", "bar", {{ by_hour | tojson }});
+</script>
+{% endblock %}

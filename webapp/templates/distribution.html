@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block subtitle %}How late is late? The spread of deviations from the filed flight-plan time.{% endblock %}
+
+{% block content %}
+<section class="card">
+  <h2>Where most flights fall</h2>
+  <p class="muted">
+    The box covers the middle half of all flights (Q1 to Q3). Half of all departures were between
+    {{ overall.q1_min.departure | minutes }} and {{ overall.q3_min.departure | minutes }} off the filed time,
+    and 1 in 10 was more than {{ overall.p90_min.departure | minutes }} late.
+  </p>
+
+  {% for strip in strips %}
+  <div class="strip">
+    <div class="strip-name">{{ strip.name }}</div>
+    <div class="strip-track">
+      <div class="strip-limit" style="left: {{ limit_position }}%" title="15-minute limit"></div>
+      <div class="strip-box" style="left: {{ strip.positions.q1_min }}%; width: {{ strip.positions.q3_min - strip.positions.q1_min }}%"></div>
+      <div class="strip-median" style="left: {{ strip.positions.median_min }}%" title="Median {{ strip.numbers.median_min | minutes }}"></div>
+      <div class="strip-mean" style="left: {{ strip.positions.mean_min }}%" title="Mean {{ strip.numbers.mean_min | minutes }}"></div>
+      <div class="strip-p90" style="left: {{ strip.positions.p90_min }}%" title="90th percentile {{ strip.numbers.p90_min | minutes }}"></div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="strip">
+    <div class="strip-name"></div>
+    <div class="strip-axis">
+      {% for tick in ticks %}
+      <span style="left: {{ tick.position }}%">{{ tick.label }}</span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><i class="key key-box"></i> Q1 – Q3</span>
+    <span><i class="key key-median"></i> Median</span>
+    <span><i class="key key-mean"></i> Mean</span>
+    <span><i class="key key-p90"></i> 90th percentile</span>
+    <span><i class="key key-limit"></i> 15-minute limit</span>
+  </div>
+
+  <p class="note">
+    The mean is higher than the median in both cases: a few very late flights pull the mean up,
+    while the median stays put. That is why the median is the better "typical" value here.
+  </p>
+</section>
+
+<section class="grid-2">
+  <div class="card">
+    <h2>Histogram</h2>
+    <p class="muted">5-minute bins from -30 to +120 minutes.</p>
+    <img class="chart-img" src="{{ url_for('chart_image', name='chart_distribution.png') }}"
+         alt="Histogram of departure and arrival deviations">
+  </div>
+
+  <div class="card">
+    <h2>All statistics</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Statistic</th><th class="num dep">Departure</th><th class="num arr">Arrival</th></tr>
+        </thead>
+        <tbody>
+          {% for stat in stats %}
+          <tr>
+            <td>{{ stat.label }}</td>
+            {% if loop.first %}
+              <td class="num">{{ stat.departure | count }}</td>
+              <td class="num">{{ stat.arrival | count }}</td>
+            {% else %}
+              <td class="num">{{ "%.1f" | format(stat.departure) }}</td>
+              <td class="num">{{ "%.1f" | format(stat.arrival) }}</td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+{% endblock %}
