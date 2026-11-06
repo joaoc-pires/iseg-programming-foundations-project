@@ -1,0 +1,5 @@
+statfor_market_segment,flights,dep_mean_min,dep_median_min,dep_delayed_over_15_pct,arr_mean_min,arr_median_min,arr_delayed_over_15_pct
+Mainline,65253,12.7,10.0,33.5,14.9,13.2,44.6
+Lowcost,31442,13.8,10.0,37.0,14.5,12.7,43.7
+Regional Aircraft,13850,11.3,9.0,29.8,14.5,12.5,42.9
+All-Cargo,1226,11.7,8.0,31.6,14.2,12.2,41.4

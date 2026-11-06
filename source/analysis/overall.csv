@@ -1,0 +1,14 @@
+,departure,arrival
+flights,111772.0,111772.0
+mean_min,12.8,14.72
+median_min,10.0,12.93
+std_dev_min,16.03,16.77
+min_min,-63.0,-539.45
+q1_min,2.0,4.15
+q3_min,20.0,23.03
+p90_min,31.0,33.93
+max_min,546.0,546.0
+early_pct,15.84,15.27
+on_time_pct,66.02,55.94
+delayed_over_15_pct,33.98,44.06
+delayed_over_60_pct,1.45,1.34
